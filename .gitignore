@@ -1,0 +1,24 @@
+# 依赖
+web/node_modules/
+scripts/node_modules/
+
+# Next.js
+web/.next/
+web/out/
+
+# ⚠️ 原始文字稿(受版权保护,禁止重新分发)——绝不提交到任何公开仓库
+data/newsletters/
+data/podcasts/
+
+# ⚠️ Obsidian 知识库(含完整文字稿正文,本地生成)——绝不提交
+vault/
+
+# 构建产物(可重新生成)
+data/unified.json
+data/chunks.json
+data/ragflow-state.json
+# 注意: web/public/data.json 是合规的公开元数据(无正文),需要提交以保证部署可用
+
+# 系统
+.DS_Store
+*.log
