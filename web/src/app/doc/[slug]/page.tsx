@@ -5,52 +5,65 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FullDoc } from "@/lib/types";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+// 公开元数据 (build 时打包, 无需运行时文件系统访问) —— 详情页主要数据源
+import siteData from "@/../public/data.json";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..");
 // PUBLIC_MODE=1 时为公开发布版: 不渲染文字稿正文,只展示元数据+相关+跳转原文
 const PUBLIC_MODE = process.env.PUBLIC_MODE === "1";
+
+interface PublicDoc {
+  id: string;
+  type: "podcast" | "newsletter";
+  slug: string;
+  title: string;
+  subtitle?: string;
+  guest?: string;
+  date: string;
+  description: string;
+  tags: string[];
+  wordCount: number;
+  postUrl: string;
+  related?: { id: string; type: string; slug: string; title: string; guest?: string; date: string; postUrl: string }[];
+}
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..");
 
 function loadUnifiedDocs(): FullDoc[] {
   const p = join(ROOT, "data", "unified.json");
   if (!existsSync(p)) return [];
-  const u = JSON.parse(readFileSync(p, "utf8"));
-  return u.docs;
-}
-
-export function generateStaticParams() {
-  // 公开版没有 unified.json 也用 data.json 的 slug 兜底
-  const docs = loadUnifiedDocs();
-  if (docs.length) return docs.map((d) => ({ slug: d.slug }));
-  // fallback: 从 public/data.json 取 slug(部署时 unified.json 不会上传)
   try {
-    const d = JSON.parse(readFileSync(join(ROOT, "web", "public", "data.json"), "utf8"));
-    return d.docs.map((x: { slug: string }) => ({ slug: x.slug }));
+    const u = JSON.parse(readFileSync(p, "utf8"));
+    return u.docs;
   } catch {
     return [];
   }
+}
+
+export function generateStaticParams() {
+  // slug 来源: siteData (公开元数据,部署时一定存在)
+  return (siteData.docs as PublicDoc[]).map((d) => ({ slug: d.slug }));
 }
 
 export const dynamic = "force-static";
 
 export default async function DocPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const docs = loadUnifiedDocs();
-  const doc = docs.find((d) => d.slug === slug);
 
-  // 公开版 / 无 unified.json: 从 data.json 读元数据
-  if (!doc) {
-    const site = JSON.parse(readFileSync(join(ROOT, "web", "public", "data.json"), "utf8"));
-    const meta = (site.docs as FullDoc[]).find((d) => d.slug === slug);
-    if (!meta) notFound();
-    return <PublicDocView meta={meta} />;
+  // 本地 + 非 PUBLIC_MODE: 渲染完整文字稿(需 unified.json)
+  if (!PUBLIC_MODE) {
+    const docs = loadUnifiedDocs();
+    const doc = docs.find((d) => d.slug === slug);
+    if (doc) return <FullDocView doc={doc} />;
   }
 
-  // 本地模式且有完整数据: 渲染文字稿(仅本地)
-  return PUBLIC_MODE ? <PublicDocView meta={doc} /> : <FullDocView doc={doc} />;
+  // 公开版 / 本地无 unified.json: 用 siteData 元数据
+  const meta = (siteData.docs as PublicDoc[]).find((d) => d.slug === slug);
+  if (!meta) notFound();
+  return <PublicDocView meta={meta} />;
 }
 
 /** 公开版详情页: 元数据 + 相关 + 跳转原文,无文字稿 */
-function PublicDocView({ meta }: { meta: any }) {
+function PublicDocView({ meta }: { meta: PublicDoc }) {
   return (
     <article className="mx-auto max-w-3xl">
       <Link href="/" className="mb-6 inline-flex items-center text-sm text-stone-500 hover:text-stone-900">
@@ -63,7 +76,7 @@ function PublicDocView({ meta }: { meta: any }) {
           <span>·</span>
           <span>{meta.date}</span>
           <span>·</span>
-          <span>{meta.wordCount?.toLocaleString()} 词</span>
+          <span>{meta.wordCount.toLocaleString()} 词</span>
         </div>
         <h1 className="mt-2 text-2xl font-bold leading-tight text-stone-900 sm:text-3xl">{meta.title}</h1>
         {meta.subtitle && <p className="mt-2 text-lg text-stone-500">{meta.subtitle}</p>}
@@ -74,7 +87,7 @@ function PublicDocView({ meta }: { meta: any }) {
         )}
         <p className="mt-3 text-stone-600">{meta.description}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {(meta.tags ?? []).map((t: string) => (
+          {(meta.tags ?? []).map((t) => (
             <span key={t} className="rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-500">
               #{t}
             </span>
@@ -82,25 +95,21 @@ function PublicDocView({ meta }: { meta: any }) {
         </div>
       </div>
 
-      {/* 跳转原文 CTA */}
       <a
         href={meta.postUrl}
         target="_blank"
         rel="noopener"
         className="block rounded-xl border-2 border-stone-900 bg-stone-900 px-6 py-4 text-center font-medium text-white transition hover:bg-stone-700"
       >
-        🔗 在 Lenny's Newsletter 阅读完整原文 →
+        🔗 在 Lenny&apos;s Newsletter 阅读完整原文 →
       </a>
-      <p className="mt-2 text-center text-xs text-stone-400">
-        完整文字稿受版权保护,请前往原作者网站阅读
-      </p>
+      <p className="mt-2 text-center text-xs text-stone-400">完整文字稿受版权保护,请前往原作者网站阅读</p>
 
-      {/* 相关推荐 */}
-      {meta.related?.length > 0 && (
+      {meta.related?.length ? (
         <div className="mt-10">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-400">同主题相关</h2>
           <div className="grid gap-2 sm:grid-cols-2">
-            {meta.related.map((r: any) => (
+            {meta.related.map((r) => (
               <a
                 key={r.id}
                 href={r.postUrl}
@@ -117,7 +126,7 @@ function PublicDocView({ meta }: { meta: any }) {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </article>
   );
 }
